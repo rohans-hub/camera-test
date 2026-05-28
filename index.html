@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera & Location Capture</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        video, canvas, img { 
+            width: 100%; 
+            max-width: 400px; 
+            display: block; 
+            margin: 15px auto; 
+            border-radius: 8px;
+            border: 2px solid #ddd; 
+        }
+        .controls {
+            margin: 15px 0;
+        }
+        button, select { 
+            padding: 12px 20px; 
+            font-size: 15px; 
+            margin: 5px; 
+            cursor: pointer; 
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #status-box { 
+            background: #eef2f7;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 15px 0;
+            font-size: 14px;
+            text-align: left;
+            line-height: 1.4;
+        }
+        .label { font-weight: bold; color: #555; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Camera & Location Capture</h2>
+        
+        <div id="status-box">
+            <div><span class="label">Status:</span> <span id="status">Initializing...</span></div>
+            <div style="margin-top: 5px;"><span class="label">Address:</span> <span id="address">Fetching location...</span></div>
+        </div>
+
+        <!-- Camera Controls -->
+        <div class="controls">
+            <label for="camera-select" class="label">Choose Camera: </label>
+            <select id="camera-select">
+                <option value="user">Front (Selfie)</option>
+                <option value="environment">Back (Main)</option>
+            </select>
+        </div>
+
+        <!-- Video stream from camera -->
+        <video id="video" autoplay playsinline></video>
+        
+        <button id="capture-btn">Take Photo</button>
+        
+        <!-- Hidden canvas to process the image -->
+        <canvas id="canvas" style="display:none;"></canvas>
+
+        <h3 id="preview-title" style="display:none;">Captured Photo</h3>
+        <img id="photo-preview" style="display:none;" alt="Captured preview">
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const captureBtn = document.getElementById('capture-btn');
+        const cameraSelect = document.getElementById('camera-select');
+        const statusDiv = document.getElementById('status');
+        const addressDiv = document.getElementById('address');
+        const photoPreview = document.getElementById('photo-preview');
+        const previewTitle = document.getElementById('preview-title');
+
+        let currentStream = null;
+        let userLocation = { latitude: null, longitude: null };
+
+        // 1. Start camera based on selection (Front or Back)
+        async function startCamera(facingMode) {
+            // Stop any existing camera streams first to avoid device lockups
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+
+            try {
+                const constraints = {
+                    video: { facingMode: facingMode },
+                    audio: false
+                };
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+                statusDiv.innerText = "Camera active.";
+            } catch (err) {
+                statusDiv.innerText = "Camera access denied or device busy.";
+                console.error(err);
+            }
+        }
+
+        // 2. Fetch high-accuracy GPS coordinates and reverse geocode them
+        function initLocation() {
+            if (!navigator.geolocation) {
+                addressDiv.innerText = "Geolocation not supported by this browser.";
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    userLocation.latitude = position.coords.latitude;
+                    userLocation.longitude = position.coords.longitude;
+                    
+                    addressDiv.innerText = `Resolving coordinates (${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)})...`;
+                    
+                    // Fetch text address using OpenStreetMap's free API
+                    try {
+                        const response = await fetch(`https://openstreetmap.org{userLocation.latitude}&lon=${userLocation.longitude}`);
+                        const data = await response.json();
+                        if (data && data.display_name) {
+                            addressDiv.innerText = data.display_name;
+                        } else {
+                            addressDiv.innerText = `Lat: ${userLocation.latitude}, Lon: ${userLocation.longitude} (Named address unknown)`;
+                        }
+                    } catch (error) {
+                        addressDiv.innerText = `Lat: ${userLocation.latitude}, Lon: ${userLocation.longitude} (Network error loading address)`;
+                        console.error(error);
+                    }
+                },
+                (error) => {
+                    addressDiv.innerText = "Location permission denied. Please enable GPS.";
+                    console.error(error);
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+
+        // 3. Switch camera stream when user changes the dropdown selector
+        cameraSelect.addEventListener('change', () => {
+            startCamera(cameraSelect.value);
+        });
+
+        // 4. Capture photo action
+        captureBtn.addEventListener('click', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            const context = canvas.getContext('2d');
+            // Flip preview horizontally if using front camera for a natural mirror effect
+            if (cameraSelect.value === 'user') {
+                context.translate(canvas.width, 0);
+                context.scale(-1, 1);
+            }
+            
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Convert canvas frame to a visual image element on screen
+            const imageDataUrl = canvas.toDataURL('image/jpeg');
+            photoPreview.src = imageDataUrl;
+            photoPreview.style.display = 'block';
+            previewTitle.style.display = 'block';
+            
+            statusDiv.innerText = "Photo captured locally!";
+            
+            // Log full package to console for debugging development
+            console.log("SUBMISSION PAYLOAD:", {
+                image: imageDataUrl,
+                location: addressDiv.innerText,
+                coordinates: userLocation
+            });
+        });
+
+        // Run functions immediately on initial load
+        window.addEventListener('DOMContentLoaded', () => {
+            startCamera(cameraSelect.value);
+            initLocation();
+        });
+    </script>
+</body>
+</html>
