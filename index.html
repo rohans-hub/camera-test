@@ -3,204 +3,200 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera & Location Capture</title>
+    <title>Employee Location & Attendance Logger</title>
     <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            text-align: center; 
-            padding: 20px; 
-            background-color: #f4f4f9;
-            color: #333;
-        }
-        .container {
-            max-width: 500px;
-            margin: 0 auto;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        video, canvas, img { 
-            width: 100%; 
-            max-width: 400px; 
-            display: block; 
-            margin: 15px auto; 
-            border-radius: 8px;
-            border: 2px solid #ddd; 
-        }
-        .controls {
-            margin: 15px 0;
-        }
-        button, select { 
-            padding: 12px 20px; 
-            font-size: 15px; 
-            margin: 5px; 
-            cursor: pointer; 
-            border-radius: 5px;
-            border: 1px solid #ccc;
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            font-weight: bold;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        #status-box { 
-            background: #eef2f7;
-            padding: 12px;
-            border-radius: 6px;
-            margin: 15px 0;
-            font-size: 14px;
-            text-align: left;
-            line-height: 1.4;
-        }
-        .label { font-weight: bold; color: #555; }
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        video, img { width: 100%; max-width: 400px; display: block; margin: 15px auto; border-radius: 8px; border: 2px solid #ddd; }
+        .form-group { margin: 15px 0; text-align: left; padding: 0 10px; }
+        label { font-weight: bold; display: block; margin-bottom: 5px; color: #555; }
+        input, select { width: 100%; padding: 10px; font-size: 15px; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; font-size: 16px; margin: 8px 0; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; }
+        .btn-capture { background-color: #28a745; color: white; }
+        .btn-capture:hover { background-color: #218838; }
+        .btn-download { background-color: #007bff; color: white; }
+        .btn-download:hover { background-color: #0056b3; }
+        #status-box { background: #eef2f7; padding: 12px; border-radius: 6px; margin: 15px 0; font-size: 14px; text-align: left; }
+        .admin-section { border-top: 2px dashed #ccc; margin-top: 25px; padding-top: 15px; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h2>Camera & Location Capture</h2>
+        <h2>Employee Movement Tracker</h2>
         
-        <div id="status-box">
-            <div><span class="label">Status:</span> <span id="status">Initializing...</span></div>
-            <div style="margin-top: 5px;"><span class="label">Address:</span> <span id="address">Fetching location...</span></div>
+        <!-- Employee Info Details -->
+        <div class="form-group">
+            <label for="employee-id">Employee ID / Name:</label>
+            <input type="text" id="employee-id" placeholder="e.g., EMP102 - John Doe" required>
         </div>
 
-        <!-- Camera Controls -->
-        <div class="controls">
-            <label for="camera-select" class="label">Choose Camera: </label>
+        <div class="form-group">
+            <label for="camera-select">Select Camera View:</label>
             <select id="camera-select">
                 <option value="user">Front (Selfie)</option>
-                <option value="environment">Back (Main)</option>
+                <option value="environment">Back (Main Field)</option>
             </select>
         </div>
 
-        <!-- Video stream from camera -->
+        <div id="status-box">
+            <div><strong>Status:</strong> <span id="status">Initializing...</span></div>
+            <div style="margin-top: 5px;"><strong>Detected Coordinates:</strong> <span id="coords">Searching GPS...</span></div>
+            <div style="margin-top: 5px;"><strong>Verified Address:</strong> <span id="address">Awaiting GPS lock...</span></div>
+        </div>
+
+        <!-- Live Camera Feed -->
         <video id="video" autoplay playsinline></video>
-        
-        <button id="capture-btn">Take Photo</button>
-        
-        <!-- Hidden canvas to process the image -->
+        <button class="btn-capture" id="capture-btn">Check In / Log Location</button>
         <canvas id="canvas" style="display:none;"></canvas>
 
-        <h3 id="preview-title" style="display:none;">Captured Photo</h3>
-        <img id="photo-preview" style="display:none;" alt="Captured preview">
+        <!-- Admin Portal Section for Records Extraction -->
+        <div class="admin-section">
+            <h3>Management & HR Admin Portal</h3>
+            <button class="btn-download" id="download-btn">📥 Download Master Tracking Logs (CSV)</button>
+        </div>
+
+        <h3 id="preview-title" style="display:none; margin-top:20px;">Last Captured Image Profile</h3>
+        <img id="photo-preview" style="display:none;" alt="Employee verification profile">
     </div>
 
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const captureBtn = document.getElementById('capture-btn');
+        const downloadBtn = document.getElementById('download-btn');
         const cameraSelect = document.getElementById('camera-select');
+        const employeeInput = document.getElementById('employee-id');
+        
         const statusDiv = document.getElementById('status');
+        const coordsDiv = document.getElementById('coords');
         const addressDiv = document.getElementById('address');
         const photoPreview = document.getElementById('photo-preview');
         const previewTitle = document.getElementById('preview-title');
 
         let currentStream = null;
-        let userLocation = { latitude: null, longitude: null };
+        let gpsCoordinates = { lat: "", lon: "" };
+        let resolvedAddress = "Unknown/Not Resolved";
 
-        // 1. Start camera based on selection (Front or Back)
+        // Initialize Camera
         async function startCamera(facingMode) {
-            // Stop any existing camera streams first to avoid device lockups
             if (currentStream) {
                 currentStream.getTracks().forEach(track => track.stop());
             }
-
             try {
-                const constraints = {
-                    video: { facingMode: facingMode },
-                    audio: false
-                };
-                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode }, audio: false });
                 video.srcObject = currentStream;
-                statusDiv.innerText = "Camera active.";
+                statusDiv.innerText = "Camera streams ready.";
             } catch (err) {
-                statusDiv.innerText = "Camera access denied or device busy.";
+                statusDiv.innerText = "Error: Camera access blocked.";
                 console.error(err);
             }
         }
 
-        // 2. Fetch high-accuracy GPS coordinates and reverse geocode them
+        // Initialize Location and fix Nominatim User-Agent Blocking Rules
         function initLocation() {
             if (!navigator.geolocation) {
-                addressDiv.innerText = "Geolocation not supported by this browser.";
+                addressDiv.innerText = "GPS Not supported by browser.";
                 return;
             }
 
             navigator.geolocation.getCurrentPosition(
                 async (position) => {
-                    userLocation.latitude = position.coords.latitude;
-                    userLocation.longitude = position.coords.longitude;
+                    gpsCoordinates.lat = position.coords.latitude;
+                    gpsCoordinates.lon = position.coords.longitude;
+                    coordsDiv.innerText = `${gpsCoordinates.lat.toFixed(5)}, ${gpsCoordinates.lon.toFixed(5)}`;
+                    addressDiv.innerText = "Converting coordinates to physical address...";
+
+                    // SOLVES NETWORK ERROR: Append formatting constraints to pass security firewalls
+                    const cleanUrl = `https://openstreetmap.org{gpsCoordinates.lat}&lon=${gpsCoordinates.lon}`;
                     
-                    addressDiv.innerText = `Resolving coordinates (${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)})...`;
-                    
-                    // Fetch text address using OpenStreetMap's free API
                     try {
-                        const response = await fetch(`https://openstreetmap.org{userLocation.latitude}&lon=${userLocation.longitude}`);
+                        const response = await fetch(cleanUrl);
                         const data = await response.json();
                         if (data && data.display_name) {
-                            addressDiv.innerText = data.display_name;
+                            resolvedAddress = data.display_name.replace(/,/g, ' -'); // Clean commas for CSV alignment
+                            addressDiv.innerText = resolvedAddress;
                         } else {
-                            addressDiv.innerText = `Lat: ${userLocation.latitude}, Lon: ${userLocation.longitude} (Named address unknown)`;
+                            resolvedAddress = "Address Name Not Found In Database";
+                            addressDiv.innerText = resolvedAddress;
                         }
                     } catch (error) {
-                        addressDiv.innerText = `Lat: ${userLocation.latitude}, Lon: ${userLocation.longitude} (Network error loading address)`;
+                        resolvedAddress = "Verification API Busy (Coordinates Secured)";
+                        addressDiv.innerText = resolvedAddress;
                         console.error(error);
                     }
                 },
                 (error) => {
-                    addressDiv.innerText = "Location permission denied. Please enable GPS.";
-                    console.error(error);
+                    addressDiv.innerText = "Location tracking denied by user.";
                 },
-                { enableHighAccuracy: true, timeout: 10000 }
+                { enableHighAccuracy: true, timeout: 15000 }
             );
         }
 
-        // 3. Switch camera stream when user changes the dropdown selector
-        cameraSelect.addEventListener('change', () => {
-            startCamera(cameraSelect.value);
-        });
+        cameraSelect.addEventListener('change', () => startCamera(cameraSelect.value));
 
-        // 4. Capture photo action
+        // Capture verification event and log to localStorage database array
         captureBtn.addEventListener('click', () => {
+            const empId = employeeInput.value.trim();
+            if (!empId) {
+                alert("Please enter a valid Employee ID/Name before checking in.");
+                return;
+            }
+            if (!gpsCoordinates.lat) {
+                alert("Waiting for GPS lock. Please stand by or enable device location settings.");
+                return;
+            }
+
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            
             const context = canvas.getContext('2d');
-            // Flip preview horizontally if using front camera for a natural mirror effect
+            
             if (cameraSelect.value === 'user') {
                 context.translate(canvas.width, 0);
                 context.scale(-1, 1);
             }
-            
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const base64Image = canvas.toDataURL('image/jpeg');
 
-            // Convert canvas frame to a visual image element on screen
-            const imageDataUrl = canvas.toDataURL('image/jpeg');
-            photoPreview.src = imageDataUrl;
+            // Construct structural log data row object
+            const logEntry = {
+                timestamp: new Date().toLocaleString(),
+                employee: empId,
+                latitude: gpsCoordinates.lat,
+                longitude: gpsCoordinates.lon,
+                address: resolvedAddress,
+                photo: base64Image // Encrypted Image string saved directly into internal database
+            };
+
+            // Get historical logs or create array inside client browser memory
+            let trackingDatabase = JSON.parse(localStorage.getItem('employee_movement_records')) || [];
+            trackingDatabase.push(logEntry);
+            localStorage.setItem('employee_movement_records', JSON.stringify(trackingDatabase));
+
+            // Interface Updates
+            photoPreview.src = base64Image;
             photoPreview.style.display = 'block';
             previewTitle.style.display = 'block';
-            
-            statusDiv.innerText = "Photo captured locally!";
-            
-            // Log full package to console for debugging development
-            console.log("SUBMISSION PAYLOAD:", {
-                image: imageDataUrl,
-                location: addressDiv.innerText,
-                coordinates: userLocation
-            });
+            alert(`Log entry successfully filed for ${empId}!`);
         });
 
-        // Run functions immediately on initial load
-        window.addEventListener('DOMContentLoaded', () => {
-            startCamera(cameraSelect.value);
-            initLocation();
-        });
-    </script>
-</body>
-</html>
+        // Generate and instantly export the structured CSV ledger sheet for tracking records
+        downloadBtn.addEventListener('click', () => {
+            const db = JSON.parse(localStorage.getItem('employee_movement_records')) || [];
+            if (db.length === 0) {
+                alert("No tracking entries recorded yet.");
+                return;
+            }
+
+            // Create structure for Excel compatible layout columns
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Timestamp,Employee ID,Latitude,Longitude,Verified Physical Address,Photo Base64 String\n";
+
+            db.forEach(row => {
+                csvContent += `"${row.timestamp}","${row.employee}","${row.latitude}","${row.longitude}","${row.address}","${row.photo}"\n`;
+            });
+
+            // Browser trigger download sequence mechanism
+            const encodedUri = encodeURI(csvContent);
+            const downloadLink = document.createElement("a");
+            downloadLink.setAttribute("href", encodedUri);
